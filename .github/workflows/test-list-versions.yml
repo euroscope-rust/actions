@@ -58,3 +58,13 @@ jobs:
             echo "::error::Unexpected versions leaked through family filter: $bad"
             exit 1
           fi
+  mark:
+    if: always()
+    needs:
+      - test-all
+      - test-families
+    runs-on: ubuntu-latest
+    steps:
+      - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe
+        with:
+          jobs: ${{ toJSON(needs) }}
