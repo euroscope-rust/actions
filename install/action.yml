@@ -1,0 +1,106 @@
+---
+name: Install EuroScope
+description: Install the specified EuroScope version
+author: euroscope-rust
+
+branding:
+  icon: list
+  color: blue
+
+inputs:
+  version:
+    description: |
+      The EuroScope version to install, e.g. "3.2.13". Set to "latest" (the
+      default) to install the newest released version. Only the version
+      currently published on EuroScope's website can be installed; older
+      versions are not hosted.
+    required: false
+    default: "latest"
+  cache:
+    description: |
+      Cache the installer file to avoid re-querying EuroScope's website on every
+      run. Set to "false" to always fetch fresh.
+    required: false
+    default: "true"
+
+outputs: {}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve version
+      id: resolve
+      shell: pwsh
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $version = $env:VERSION
+
+        if ($version -eq "latest") {
+          Write-Host "Resolving latest EuroScope version..."
+          # Category 30 = "Public release" on the euroscope.hu WordPress site.
+          $url = "https://www.euroscope.hu/wp/wp-json/wp/v2/posts?categories=30&per_page=100&_fields=title"
+          $resp = Invoke-RestMethod -Uri $url -MaximumRetryCount 3 -RetryIntervalSec 2
+          # Post titles look like "v3.2.13"; take the first version-like token
+          # from the newest post and strip the leading "v".
+          $all = foreach ($p in $resp) {
+            foreach ($m in [regex]::Matches($p.title.rendered, 'v?[0-9]+(\.[0-9]+){1,3}')) {
+              $m.Value -replace '^[vV]', ''
+            }
+          }
+          $version = $all | Select-Object -First 1
+          if (-not $version) {
+            Write-Host "::error::Could not resolve the latest EuroScope version"
+            exit 1
+          }
+        }
+
+        Write-Host "EuroScope version: $version"
+        $installer = Join-Path $env:RUNNER_TEMP "EuroScopeSetup.$version.msi"
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "installer=$installer"
+
+    - name: Restore cached installer
+      id: cache
+      if: inputs.cache == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        key: euroscope-installer-${{ steps.resolve.outputs.version }}
+        path: ${{ steps.resolve.outputs.installer }}
+
+    - name: Download EuroScope installer
+      if: inputs.cache != 'true' || steps.cache.outputs.cache-hit != 'true'
+      shell: pwsh
+      env:
+        VERSION: ${{ steps.resolve.outputs.version }}
+        INSTALLER: ${{ steps.resolve.outputs.installer }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $url = "https://euroscope.hu/install/EuroScopeSetup.$($env:VERSION).msi"
+        Write-Host "Downloading EuroScope from $url"
+        Invoke-WebRequest -Uri $url -OutFile $env:INSTALLER `
+          -MaximumRetryCount 3 -RetryIntervalSec 2
+
+    - name: Install EuroScope
+      shell: pwsh
+      env:
+        INSTALLER: ${{ steps.resolve.outputs.installer }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $msi = $env:INSTALLER
+        $log = Join-Path $env:RUNNER_TEMP "euroscope-install.log"
+        Write-Host "Installing EuroScope..."
+        $p = Start-Process msiexec.exe `
+          -ArgumentList "/i `"$msi`" /qn /norestart /l*v `"$log`"" `
+          -Wait -PassThru
+
+        Write-Host "::group::EuroScope install log"
+        if (Test-Path $log) { Get-Content $log }
+        Write-Host "::endgroup::"
+
+        if ($p.ExitCode -ne 0) {
+          Write-Host "::error::msiexec failed with exit code $($p.ExitCode)"
+          exit $p.ExitCode
+        }
+        Write-Host "EuroScope installed."
