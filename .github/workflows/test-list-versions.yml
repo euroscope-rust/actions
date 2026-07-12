@@ -58,7 +58,7 @@ jobs:
             echo "::error::Unexpected versions leaked through family filter: $bad"
             exit 1
           fi
-  mark:
+  test-list-versions-mark:
     if: always()
     needs:
       - test-all

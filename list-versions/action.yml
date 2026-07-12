@@ -52,7 +52,7 @@ runs:
     - name: Restore cached release list
       id: cache
       if: inputs.cache == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:
         path: ${{ steps.meta.outputs.file }}
         key: euroscope-versions-${{ inputs.limit }}-${{ steps.meta.outputs.date }}
