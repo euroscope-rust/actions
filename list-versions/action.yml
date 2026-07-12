@@ -1,0 +1,135 @@
+---
+name: List EuroScope versions
+description: Lists released EuroScope versions
+author: euroscope-rust
+
+branding:
+  icon: list
+  color: blue
+
+inputs:
+  limit:
+    description: Maximum number of release posts to inspect.
+    required: false
+    default: "100"
+  cache:
+    description: |
+      Cache the upstream response for one day to avoid re-querying EuroScope's
+      website on every run. Set to "false" to always fetch fresh.
+    required: false
+    default: "true"
+  version-families:
+    description: |
+      Optional newline-separated list of version families to keep, e.g.
+      "3.1" and "3.2". A version matches a family when it equals the family
+      or begins with "<family>." (so "3.2" keeps 3.2 and 3.2.x but not 3.20).
+      Leave empty to return every version.
+    required: false
+    default: ""
+
+outputs:
+  versions:
+    description: JSON array of all discovered version strings, newest release first.
+    value: ${{ steps.list.outputs.versions }}
+  latest:
+    description: The most recently released version string.
+    value: ${{ steps.list.outputs.latest }}
+  count:
+    description: Number of versions discovered.
+    value: ${{ steps.list.outputs.count }}
+
+runs:
+  using: composite
+  steps:
+    - name: Compute cache key
+      id: meta
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+        echo "file=${RUNNER_TEMP}/euroscope-versions.json" >> "$GITHUB_OUTPUT"
+
+    - name: Restore cached release list
+      id: cache
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.meta.outputs.file }}
+        key: euroscope-versions-${{ inputs.limit }}-${{ steps.meta.outputs.date }}
+
+    - name: Fetch release list
+      if: inputs.cache != 'true' || steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        LIMIT: ${{ inputs.limit }}
+        DEST: ${{ steps.meta.outputs.file }}
+      run: |
+        set -euo pipefail
+
+        # Category 30 = "Public release" on the EuroScope site.
+        url="https://www.euroscope.hu/wp/wp-json/wp/v2/posts?categories=30&per_page=${LIMIT}&_fields=title"
+
+        curl --fail --silent --show-error --location \
+          --retry 3 --retry-delay 2 --retry-connrefused \
+          --output "$DEST" "$url"
+
+    - name: List versions
+      id: list
+      shell: bash
+      env:
+        SRC: ${{ steps.meta.outputs.file }}
+        FAMILIES: ${{ inputs.version-families }}
+      run: |
+        set -euo pipefail
+
+        posts="$(cat "$SRC")"
+
+        # Post titles look like "v3.2.13" or
+        # "v3.2.2.3 and v3.2.3.2 with TOKEN authentication update".
+        # Pull every version-like token out, drop the leading "v", and keep the
+        # API's newest-first order while removing duplicates.
+        versions="$(
+          jq -r '.[].title.rendered' <<<"$posts" \
+            | grep -oiE 'v?[0-9]+(\.[0-9]+){1,3}' \
+            | sed 's/^[vV]//' \
+            | awk '!seen[$0]++'
+        )"
+
+        if [ -z "$versions" ]; then
+          echo "::error::No EuroScope versions found in $SRC" >&2
+          exit 1
+        fi
+
+        # Filtering by version family.
+        mapfile -t families < <(printf '%s\n' "$FAMILIES" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' || true)
+
+        if [ "${#families[@]}" -gt 0 ]; then
+          filtered=""
+          while IFS= read -r v; do
+            [ -z "$v" ] && continue
+            for fam in "${families[@]}"; do
+              if [ "$v" = "$fam" ] || [ "${v#"$fam".}" != "$v" ]; then
+                filtered+="$v"$'\n'
+                break
+              fi
+            done
+          done <<<"$versions"
+          versions="$(printf '%s' "$filtered")"
+
+          if [ -z "$versions" ]; then
+            echo "::error::No EuroScope versions matched families: ${families[*]}" >&2
+            exit 1
+          fi
+        fi
+
+        versions_json="$(printf '%s\n' "$versions" | jq -R . | jq -cs .)"
+        latest="$(printf '%s\n' "$versions" | head -n1)"
+        count="$(printf '%s\n' "$versions" | wc -l | tr -d ' ')"
+
+        {
+          echo "versions=$versions_json"
+          echo "latest=$latest"
+          echo "count=$count"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "Found $count EuroScope version(s); latest: $latest"
