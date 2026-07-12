@@ -2,8 +2,14 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - /
+      - /install/action.yml
     schedule:
       interval: daily
     commit-message:
       prefix: deps
+    labels:
+      - dependencies
+    cooldown:
+      default-days: 7
