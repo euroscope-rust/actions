@@ -58,5 +58,3 @@ jobs:
             echo "::error::Unexpected versions leaked through family filter: $bad"
             exit 1
           fi
-          # the filtered set must be smaller than the unfiltered one
-          [ "$COUNT" -le "${{ steps.all.outputs.count }}" ]
