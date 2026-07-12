@@ -46,8 +46,8 @@ jobs:
             3.2
       - name: Check family filter
         env:
-          VERSIONS: ${{ steps.filtered.outputs.versions }}
-          COUNT: ${{ steps.filtered.outputs.count }}
+          VERSIONS: ${{ steps.list.outputs.versions }}
+          COUNT: ${{ steps.list.outputs.count }}
         run: |
           set -euo pipefail
           echo "filtered: $VERSIONS"
