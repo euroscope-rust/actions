@@ -1,0 +1,70 @@
+---
+name: Test install
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test-install:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - latest
+          - 3.2.3.2
+          - 3.2.2.3
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - name: Install EuroScope
+        uses: ./install
+        with:
+          version: ${{ matrix.version }}
+      - name: Verify EuroScope is installed
+        shell: pwsh
+        env:
+          VERSION: ${{ matrix.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # An installed MSI registers an uninstall entry, we look for it to
+          # ensure the install worked.
+          $keys = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+          )
+          $app = Get-ItemProperty $keys -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like "*EuroScope*" }
+
+          # Fall back to locating the executable on disk.
+          $exe = Get-ChildItem `
+            "C:\Program Files (x86)\EuroScope", "C:\Program Files\EuroScope" `
+            -Filter EuroScope.exe -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+
+          if (-not $app -and -not $exe) {
+            Write-Host "::error::EuroScope was not found after install"
+            exit 1
+          }
+
+          if ($app) { $app | Select-Object DisplayName, DisplayVersion | Format-List }
+          if ($exe) { Write-Host "Found: $($exe.FullName)" }
+          Write-Host "EuroScope $($env:VERSION) is installed."
+
+  test-install-mark:
+    if: always()
+    needs:
+      - test-install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe
+        with:
+          jobs: ${{ toJSON(needs) }}
