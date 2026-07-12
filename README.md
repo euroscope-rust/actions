@@ -42,7 +42,7 @@ The following outputs are available for `list-versions`:
 
 ## License
 
-See [](./LICENSE).
+See [LICENSE](./LICENSE).
 
 ## Contributing
 
