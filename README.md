@@ -29,7 +29,11 @@ The following inputs are available for `install`:
 
 ### `install` outputs
 
-The `install` action has no outputs.
+The following outputs are available for `install`:
+
+| Output | Description |
+| --- | --- |
+| `version` | The EuroScope version that was installed. Same as the `version` input, except when it was `latest`, in which case this is the resolved version. |
 
 ## License
 

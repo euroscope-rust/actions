@@ -23,7 +23,12 @@ inputs:
     required: false
     default: "true"
 
-outputs: {}
+outputs:
+  version:
+    description: |
+      The EuroScope version that was installed. Same as the `version` input,
+      except when it was "latest", in which case this is the resolved version.
+    value: ${{ steps.resolve.outputs.version }}
 
 runs:
   using: composite

@@ -25,15 +25,23 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - name: Install EuroScope
+        id: install
         uses: ./install
         with:
           version: ${{ matrix.version }}
       - name: Verify EuroScope is installed
         shell: pwsh
         env:
-          VERSION: ${{ matrix.version }}
+          VERSION: ${{ steps.install.outputs.version }}
         run: |
           $ErrorActionPreference = "Stop"
+
+          # The action must report the concrete version it installed; for the
+          # "latest" job that means a resolved number, never the literal "latest".
+          if (-not $env:VERSION -or $env:VERSION -eq "latest") {
+            Write-Host "::error::install did not report a resolved version (got '$($env:VERSION)')"
+            exit 1
+          }
 
           # An installed MSI registers an uninstall entry, we look for it to
           # ensure the install worked.
